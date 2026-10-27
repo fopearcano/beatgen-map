@@ -41,9 +41,9 @@
     baseLayers.forEach(({ layer, key }) => layer.setStyle(s[key]));
   }
 
-  function setStreetDetail(onOff) {
+  function setStreetDetail(onOff, remember = true) {
     streetDetail = onOff;
-    A.store.set('streets', onOff ? 'on' : 'off');
+    if (remember) A.store.set('streets', onOff ? 'on' : 'off');
     if (onOff) tiles.addTo(map); else tiles.remove();
     renderTowns();
   }
@@ -536,6 +536,17 @@
     tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       minZoom: 12, maxZoom: 19, className: 'tiles',
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    });
+    /* Offline, or wherever the tile server is blocked, drop the street layer
+       and its toggle rather than leave a control that does nothing. */
+    let tileLoads = 0, tileErrors = 0;
+    tiles.on('tileload', () => { tileLoads++; });
+    tiles.on('tileerror', () => {
+      if (++tileErrors < 6 || tileLoads) return;
+      tiles.off('tileerror');
+      setStreetDetail(false, false);
+      const row = document.getElementById('street-toggle');
+      if (row) row.hidden = true;
     });
     if (streetDetail) tiles.addTo(map);
 

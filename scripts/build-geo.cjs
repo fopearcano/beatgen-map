@@ -1,0 +1,98 @@
+/*
+ * Builds data/geo.js: countries, country borders, US state lines and the
+ * larger lakes as one compact TopoJSON, plus a list of reference towns, wrapped
+ * in a script so the page also works when opened straight from disk.
+ *
+ *   npm install --no-save world-atlas@2 us-atlas@3 topojson-client@3 topojson-server@3 topojson-simplify@3
+ *   curl -o lakes.geojson https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_lakes.geojson
+ *   curl -o towns.geojson https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson
+ *   node scripts/build-geo.cjs lakes.geojson towns.geojson data/geo.js
+ *
+ * Countries stay separate polygons rather than one merged land shape: Natural
+ * Earth cuts them at the antimeridian, and merging them would join Russia's
+ * two halves into a ring that wraps the whole map.
+ */
+const fs = require('fs');
+const topo = require('topojson-client');
+const server = require('topojson-server');
+const simp = require('topojson-simplify');
+const world = require('world-atlas/countries-50m.json');
+const us = require('us-atlas/states-10m.json');
+
+const [lakesPath, townsPath, out] = process.argv.slice(2);
+if (!lakesPath || !townsPath || !out) {
+  console.error('usage: node scripts/build-geo.cjs <ne_50m_lakes.geojson> <ne_50m_populated_places_simple.geojson> <out.js>');
+  process.exit(1);
+}
+const lakes = JSON.parse(fs.readFileSync(lakesPath, 'utf8'));
+/* Reference towns for context, as [name, lat, lng, scalerank] (0 = largest). */
+const towns = JSON.parse(fs.readFileSync(townsPath, 'utf8')).features
+  .map((f) => f.properties)
+  .filter((p) => p.scalerank <= 7)
+  .sort((a, b) => a.scalerank - b.scalerank || b.pop_max - a.pop_max)
+  .map((p) => [p.name.replace(/\s+/g, ' ').trim(), +p.latitude.toFixed(3), +p.longitude.toFixed(3), p.scalerank]);
+
+/* Rough area in square degrees, scaled by latitude; enough to keep only the big lakes. */
+function ringArea(r) {
+  let a = 0;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] + r[i][0]) * (r[j][1] - r[i][1]);
+  return Math.abs(a / 2) * Math.cos((r[0][1] * Math.PI) / 180);
+}
+function lakeArea(g) {
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  return polys.reduce((s, p) => s + ringArea(p[0]), 0);
+}
+
+/* A few rings (Wrangel Island, Fiji) straddle the antimeridian; Leaflet would
+   draw them as bands across the whole map. Unwrap them past 180° instead. */
+function unwrapRing(ring) {
+  const crosses = ring.some((p, i) => i && Math.abs(p[0] - ring[i - 1][0]) > 180);
+  if (!crosses) return ring;
+  const east = ring.filter((p) => p[0] > 0).length >= ring.length / 2;
+  return ring.map(([x, y]) => [east && x < 0 ? x + 360 : !east && x > 0 ? x - 360 : x, y]);
+}
+function unwrap(g) {
+  if (g.type === 'Polygon') return { ...g, coordinates: g.coordinates.map(unwrapRing) };
+  if (g.type === 'MultiPolygon') return { ...g, coordinates: g.coordinates.map((p) => p.map(unwrapRing)) };
+  return g;
+}
+const strip = (f) => ({ type: 'Feature', properties: {}, geometry: unwrap(f.geometry) });
+const countries = topo.feature(world, world.objects.countries);
+countries.features = countries.features.map(strip);
+const borders = topo.mesh(world, world.objects.countries, (a, b) => a !== b);
+const states = topo.mesh(us, us.objects.states, (a, b) => a !== b);
+const bigLakes = { type: 'FeatureCollection', features: lakes.features.filter((f) => lakeArea(f.geometry) > 0.15).map(strip) };
+
+/* Label points for countries and U.S. states: the area-weighted centroid of
+   each one's largest polygon, as [name, lat, lng, area in square degrees]. */
+function ringCentroid(r) {
+  let a = 0, x = 0, y = 0;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const f = r[j][0] * r[i][1] - r[i][0] * r[j][1];
+    a += f; x += (r[j][0] + r[i][0]) * f; y += (r[j][1] + r[i][1]) * f;
+  }
+  return [y / (3 * a), x / (3 * a)];
+}
+function labelPoint(name, g) {
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  let best = null, area = 0, total = 0;
+  polys.forEach((p) => { const ar = ringArea(p[0]); total += ar; if (ar > area) { area = ar; best = p[0]; } });
+  const [lat, lng] = ringCentroid(best);
+  return [name, +lat.toFixed(2), +lng.toFixed(2), +total.toFixed(2)];
+}
+const countryLabels = topo.feature(world, world.objects.countries).features
+  .filter((f) => f.geometry && f.properties.name !== 'Antarctica')
+  .map((f) => labelPoint(f.properties.name, unwrap(f.geometry)));
+const stateLabels = topo.feature(us, us.objects.states).features
+  .map((f) => labelPoint(f.properties.name, f.geometry));
+
+let t = server.topology({ countries, borders, states, lakes: bigLakes }, 1e5);
+t = simp.presimplify(t);
+t = simp.simplify(t, simp.quantile(t, 0.12));
+t = simp.filter(t, simp.filterWeight(t, 1e-6));
+fs.writeFileSync(out,
+  '/* Base geography for Beat Atlas. Natural Earth (public domain) via world-atlas, US Census via us-atlas.\n   Generated by scripts/build-geo.cjs; do not edit by hand. */\n' +
+  'window.BEAT_GEO = ' + JSON.stringify(t) + ';\n' +
+  'window.BEAT_TOWNS = ' + JSON.stringify(towns) + ';\n' +
+  'window.BEAT_LABELS = ' + JSON.stringify({ countries: countryLabels, states: stateLabels }) + ';\n');
+console.log('lakes kept', bigLakes.features.length, 'towns', towns.length, 'bytes', fs.statSync(out).size);

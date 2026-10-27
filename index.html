@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Beat Atlas</title>
+<meta name="description" content="An interactive literary map of the Beat Generation: the places, people, books and journeys of Kerouac, Ginsberg, Burroughs and their circle, 1944–1997.">
+<meta name="theme-color" content="#fbfaf5">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/atlas.css">
+</head>
+<body>
+<header class="masthead">
+  <a class="brand" href="#journeys" aria-label="Beat Atlas, home">
+    <svg class="brand-shield" viewBox="0 0 40 44" aria-hidden="true">
+      <path class="shield-outer" d="M3 2h34c.6 3.2-.2 6 .9 9.4 1.6 5 2.4 10.4-.6 15.6C34 33 27 37.5 20 42 13 37.5 6 33 2.7 27 -.3 21.8.5 16.4 2.1 11.4 3.2 8 2.4 5.2 3 2z"/>
+      <path class="shield-band" d="M5.2 4.4h29.6c.2 1.9 0 3.6.4 5.4H4.8c.4-1.8.2-3.5.4-5.4z"/>
+      <text x="20" y="31.5" text-anchor="middle">B</text>
+    </svg>
+    <span class="brand-text">
+      <span class="brand-name">Beat Atlas</span>
+      <span class="brand-sub">A literary road map of the Beat Generation, 1944–1997</span>
+    </span>
+  </a>
+  <div class="masthead-tools">
+    <div class="viewswitch" role="group" aria-label="View">
+      <button type="button" id="view-map" class="is-on" aria-pressed="true">Map</button>
+      <button type="button" id="view-network" aria-pressed="false">Network</button>
+    </div>
+    <button type="button" class="icon-btn" id="theme-toggle" aria-label="Switch to dark theme" title="Switch theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18V3z"/><circle cx="12" cy="12" r="8.25" fill="none" stroke-width="1.5"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar" id="sidebar" aria-label="Atlas index">
+    <button type="button" class="sheet-handle" id="sheet-handle" aria-expanded="false" aria-controls="sidebar">
+      <span class="sheet-grip" aria-hidden="true"></span><span class="sheet-label">Expand list</span>
+    </button>
+    <div class="search">
+      <label class="visually-hidden" for="search">Search the atlas</label>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
+      <input id="search" type="search" placeholder="Search places, people, books…" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Index sections">
+      <a href="#journeys" data-tab="journeys">Journeys</a>
+      <a href="#places" data-tab="places">Places</a>
+      <a href="#people" data-tab="people">People</a>
+      <a href="#works" data-tab="works">Books</a>
+      <a href="#chronology" data-tab="chronology">Chronology</a>
+    </nav>
+    <div class="panel" id="panel" tabindex="-1" aria-live="polite"></div>
+  </aside>
+
+  <section class="stage" aria-label="Map">
+    <div class="canvas">
+      <div id="map" class="map" role="application" aria-label="Map of Beat Generation places"></div>
+      <div id="network" class="network" hidden></div>
+
+      <div class="legend" id="legend"></div>
+
+      <div class="storybar" id="storybar" hidden>
+        <button type="button" class="sb-btn" id="sb-prev" aria-label="Previous stop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+        </button>
+        <div class="sb-body">
+          <span class="sb-kicker" id="sb-kicker"></span>
+          <span class="sb-title" id="sb-title"></span>
+        </div>
+        <button type="button" class="sb-btn" id="sb-play" aria-label="Play">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        </button>
+        <button type="button" class="sb-btn" id="sb-next" aria-label="Next stop">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+        <button type="button" class="sb-btn sb-close" id="sb-close" aria-label="Close journey">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="timeline" id="timeline">
+      <div class="tl-head">
+        <span class="tl-title">Chronology</span>
+        <span class="tl-range" id="tl-range">1943–2021 · drag across the strip to filter by years</span>
+        <span class="tl-tools">
+          <button type="button" class="tl-btn" id="tl-play">Play the years</button>
+          <button type="button" class="tl-btn" id="tl-reset" hidden>Show all years</button>
+        </span>
+      </div>
+      <div class="tl-plot" id="tl-plot"></div>
+    </div>
+  </section>
+</main>
+
+<div class="tip-float" id="tip" role="tooltip" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/d3/d3.min.js"></script>
+<script src="vendor/topojson/topojson-client.min.js"></script>
+<script src="data/geo.js"></script>
+<script src="data/places.js"></script>
+<script src="data/people.js"></script>
+<script src="data/works.js"></script>
+<script src="data/events.js"></script>
+<script src="data/journeys.js"></script>
+<script src="js/core.js"></script>
+<script src="js/map.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/network.js"></script>
+<script src="js/panel.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -12,7 +12,10 @@
   let path = null;          // current path (person life or journey stops)
   let pathKind = null;      // 'person' | 'journey'
   let drawnSegments = [];   // solid segments drawn so far (journey) or all (person)
-  let streetDetail = A.store.get('streets') !== 'off';
+  /* OpenStreetMap's tile servers refuse requests that don't say which site they
+     come from, and a page opened from disk (file://) can't say. */
+  const tilesAllowed = location.protocol === 'http:' || location.protocol === 'https:';
+  let streetDetail = tilesAllowed && A.store.get('streets') !== 'off';
 
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const isDark = () => css('color-scheme') === 'dark';
@@ -42,6 +45,7 @@
   }
 
   function setStreetDetail(onOff, remember = true) {
+    if (!tiles) return;
     streetDetail = onOff;
     if (remember) A.store.set('streets', onOff ? 'on' : 'off');
     if (onOff) tiles.addTo(map); else tiles.remove();
@@ -478,9 +482,9 @@
           </button>`).join('')}</div>
         <div class="legend-sep"></div>
         <div class="legend-row legend-static"><span class="legend-route"></span><span>Route of a life or journey</span></div>
-        <button type="button" class="legend-row" id="street-toggle" aria-pressed="${streetDetail}">
+        ${tilesAllowed ? `<button type="button" class="legend-row" id="street-toggle" aria-pressed="${streetDetail}">
           <svg viewBox="0 0 20 20"><path d="M3 17 8 3M17 17 12 3M10 4v2M10 9v2M10 14v2"/></svg><span>Street map when zoomed in</span>
-        </button>
+        </button>` : '<p class="legend-note">Street maps appear when the atlas is served from a web address rather than opened as a file.</p>'}
       </div>`;
     el.querySelector('.legend-head').addEventListener('click', () => {
       const isClosed = el.classList.toggle('is-closed');
@@ -493,9 +497,10 @@
       b.setAttribute('aria-pressed', String(!state.hiddenKinds.has(k)));
       A.emit('kinds');
     }));
-    el.querySelector('#street-toggle').addEventListener('click', (ev) => {
+    const toggle = el.querySelector('#street-toggle');
+    if (toggle) toggle.addEventListener('click', () => {
       setStreetDetail(!streetDetail);
-      ev.currentTarget.setAttribute('aria-pressed', String(streetDetail));
+      toggle.setAttribute('aria-pressed', String(streetDetail));
     });
     L.DomEvent.disableClickPropagation(el);
     L.DomEvent.disableScrollPropagation(el);
@@ -533,22 +538,24 @@
 
     /* OpenStreetMap's standard tiles, tinted to the atlas palette by CSS, only once
        the map is close enough for streets to matter. */
-    tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      minZoom: 12, maxZoom: 19, className: 'tiles',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    });
-    /* Offline, or wherever the tile server is blocked, drop the street layer
-       and its toggle rather than leave a control that does nothing. */
-    let tileLoads = 0, tileErrors = 0;
-    tiles.on('tileload', () => { tileLoads++; });
-    tiles.on('tileerror', () => {
-      if (++tileErrors < 6 || tileLoads) return;
-      tiles.off('tileerror');
-      setStreetDetail(false, false);
-      const row = document.getElementById('street-toggle');
-      if (row) row.hidden = true;
-    });
-    if (streetDetail) tiles.addTo(map);
+    if (tilesAllowed) {
+      tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        minZoom: 12, maxZoom: 19, className: 'tiles', referrerPolicy: 'strict-origin-when-cross-origin',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      });
+      /* Offline, or wherever the tile server is unreachable, drop the street
+         layer and its toggle rather than leave a control that does nothing. */
+      let tileLoads = 0, tileErrors = 0;
+      tiles.on('tileload', () => { tileLoads++; });
+      tiles.on('tileerror', () => {
+        if (++tileErrors < 6 || tileLoads) return;
+        tiles.off('tileerror');
+        setStreetDetail(false, false);
+        const row = document.getElementById('street-toggle');
+        if (row) row.hidden = true;
+      });
+      if (streetDetail) tiles.addTo(map);
+    }
 
     routeLayer = L.layerGroup().addTo(map);
     stopLayer = L.layerGroup().addTo(map);

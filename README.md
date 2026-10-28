@@ -31,7 +31,7 @@ Every view has its own link (for example `#person-kerouac`, `#place-six-gallery`
 
 It's a static site with no build step and no dependencies to install.
 
-- Serve the folder: `python3 -m http.server` and visit <http://localhost:8000>, or
+- Serve the folder: run `python3 -m http.server 8002` in it and visit <http://localhost:8002>, or
 - open `index.html` directly in a browser. Everything works this way except the street-level maps: OpenStreetMap's tile servers only answer requests that come from a web address, so the street layer is switched off for pages opened as files.
 
 To publish it with GitHub Pages: **Settings → Pages → Build and deployment → Deploy from a branch**, pick the branch and the root folder.
